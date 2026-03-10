@@ -1,65 +1,84 @@
 import pandas as pd
 import numpy as np
 
-data = pd.read_csv("..\\Datasets\\ml-bugs.csv")
+data = pd.read_csv(r"..\..\Datasets\ml-bugs.csv")
 
-def MCEntropy(dataset, outcome_column, num_factors = 2, num_limit = 0):
+def two_group_ent(first, tot):
+    return -(first/tot*np.log2(first/tot) +
+             (tot-first)/tot*np.log2((tot-first)/tot))
+
+def InformationGain(dataset, outcome_column, num_factors = 2, num_limit = 0):
 
     outcomes = dataset[outcome_column].unique()
     factors = dataset.columns[dataset.columns != outcome_column]
+    num_rows = len(dataset)
 
     entropy_outcomes = 0
 
     for outcome in outcomes:
         prob = len(dataset[dataset[outcome_column] == outcome]) / len(dataset)
+        print(outcome, "probability:", prob)
+        print(outcome, "entropy:", np.negative(prob * np.log2(prob)))
         entropy_outcomes += np.negative(prob * np.log2(prob))
 
     print(outcome_column, "entropy:", entropy_outcomes)
 
-    entropies = {}
-
     for i in range(num_factors):
-        factor_entropy = 0
-        print(factors[i], " entropy: ", sep="")
-        if dataset[factors[i]].dtype == object:
-            variations = dataset[factors[i]].unique()
-            for t in variations:
-                prob = len(dataset[dataset[factors[i]] == t]) / len(dataset)
-                factor_entropy += np.negative(prob * np.log2(prob))
-        elif dataset[factors[i]].dtype in [int, float]:
-            prob_1 = len(dataset[dataset[factors[i]] >= num_limit]) / len(dataset)
-            prob_2 = len(dataset[dataset[factors[i]] < num_limit]) / len(dataset)
-            factor_entropy += np.negative(prob_1 * np.log2(prob_1)) - (prob_2 * np.log2(prob_2))
-        print(factor_entropy)
-        entropies[factors[i]] = factor_entropy
-
-    for i in range(num_factors):
-        factor_entropy = 0
         print(factors[i], "information gain from:")
-        if dataset[factors[i]].dtype == object:
+        if dataset[factors[i]].dtype == "str":
             variations = dataset[factors[i]].unique()
             for t in variations:
-                print(f"---{t}:")
+                print(f"-{t}:")
                 info_gain = entropy_outcomes
-                total_results = len(dataset[dataset[factors[i]] == t])
+                split_set = dataset[dataset[factors[i]] == t]
                 post_split_entropy = 0
                 for s in outcomes:
-                    prob = len(dataset[dataset[outcome_column] == s]) / total_results
+                    prob = len(split_set[split_set[outcome_column] == s]) / num_rows
                     post_split_entropy += np.negative(prob * np.log2(prob))
-                info_gain -= post_split_entropy
+                info_gain -= (post_split_entropy) / 2
                 print(f"------{info_gain}")
+        elif dataset[factors[i]].dtype in ["int", "float"]:
+            print(f"---{factors[i]} < {num_limit} mm:")
+            info_gain = entropy_outcomes
+            hi_split = dataset[dataset[factors[i]] >= num_limit]
+            lo_split = dataset[dataset[factors[i]] < num_limit]
+            for s in outcomes:
+                post_split_entropy = 0
+                prob_hi = len(hi_split) / num_rows
+                hi_entropy = -prob_hi * np.log2(len(hi_split[hi_split["Species"] == s])/len(hi_split))
+                print(len(hi_split), prob_hi, len(hi_split[hi_split["Species"] == s]), hi_entropy)
+                prob_lo = len(lo_split) / num_rows
+                lo_entropy = -prob_lo * np.log2(len(lo_split[lo_split["Species"] == s])/len(lo_split))
+                print(len(lo_split), prob_lo, len(lo_split[lo_split["Species"] == s]), lo_entropy)
+                post_split_entropy += hi_entropy + lo_entropy
+                print(f"{s}: {post_split_entropy}")
+            info_gain -= (post_split_entropy) / 2
+            print(f"------{info_gain}")
 
 
 
-MCEntropy(dataset=data, outcome_column="Species", num_limit=17)
 
-prob_lo = len(data[data["Species"] == "Lobug"]) / len(data)
-prob_mo = len(data[data["Species"] == "Mobug"]) / len(data)
-entropy_spec = np.negative(prob_lo * np.log2(prob_lo)) - (prob_mo * np.log2(prob_mo))
+# InformationGain(dataset=data, outcome_column="Species", num_limit=17)
+prob_mo = len(data[data["Species"] == "Mobug"])/len(data)
+prob_lo = (len(data) - len(data[data["Species"] == "Mobug"]))/len(data)
+ent_og = -(prob_mo * np.log2(prob_mo)) + -(prob_lo * np.log2(prob_lo))
 
-print("Species entropy:",entropy_spec)
+more_17 = data[data["Length (mm)"] >= 17]
+prob_more_17 = len(data[data["Length (mm)"] >= 17])/len(data)
+prob_m17_mb = len(more_17[more_17["Species"] == "Mobug"])/len(more_17)
 
-print(len(data[(data["Color"] == "Brown") & (data["Species"] == "Lobug")]))
+less_17 = data[data["Length (mm)"] < 17]
+prob_less_17 = len(data[data["Length (mm)"] < 17])/len(data)
+prob_l17_mb = len(less_17[less_17["Species"] == "Mobug"])/len(less_17)
+
+
+tot_ent = two_group_ent(len(data[data["Species"] == "Mobug"]), len(data))
+g17_ent = prob_more_17 * two_group_ent(len(more_17[more_17["Species"] == "Mobug"]),len(more_17)) + prob_less_17 * two_group_ent(len(less_17[less_17["Species"] == "Mobug"]),len(less_17))
+
+answer = tot_ent - g17_ent
+print(answer)
+
+
 
 '''
 data_species = []
