@@ -1,0 +1,138 @@
+PA Data Inserts
+
+INSERT INTO customer_rental_details (month_report, cid, rid, sid, aid, first_name, last_name, email, district)
+SELECT mm_name(r.rental_date), c.customer_id, r.rental_id, s.store_id, a.address_id, c.first_name, c.last_name, c.email, a.district
+	FROM customer c
+	LEFT JOIN rental r ON r.customer_id = c.customer_id
+	LEFT JOIN store s ON c.store_id = s.store_id
+	LEFT JOIN address a ON a.address_id = c.address_id
+	LEFT JOIN city ON a.district = city.city
+	LEFT JOIN country ON a.district = country.country
+	GROUP BY c.customer_id, r.rental_id, s.store_id, a.address_id;
+
+INSERT INTO TOTAL_DISTRICT_SUMMARY (DISTRICT, RENTAL_COUNT)
+SELECT A.DISTRICT, COUNT(R.RENTAL_ID)
+FROM RENTAL R
+	RIGHT JOIN CUSTOMER C ON R.CUSTOMER_ID = C.CUSTOMER_ID
+	LEFT JOIN ADDRESS A ON C.ADDRESS_ID = A.ADDRESS_ID
+	GROUP BY A.DISTRICT
+	ORDER BY COUNT(R.RENTAL_ID) DESC;
+
+
+CREATE OR REPLACE FUNCTION quarterly(transaction_date timestamp without time zone)
+RETURNS integer AS $$
+BEGIN
+    IF EXTRACT(month FROM transaction_date) BETWEEN 1 AND 3 THEN
+		RETURN 1;
+	ELSEIF EXTRACT(month FROM transaction_date) BETWEEN 4 AND 6 THEN
+		RETURN 2;
+	ELSEIF EXTRACT(month FROM transaction_date) BETWEEN 7 AND 9 THEN
+		RETURN 3;
+	ELSE
+		RETURN 4;
+	END IF;
+END; $$
+LANGUAGE PLPGSQL;
+
+--OLD CODE
+-- Table: public.customer_rental_details
+
+-- DROP TABLE IF EXISTS public.customer_rental_details;
+
+CREATE TABLE IF NOT EXISTS public.customer_rental_details
+(
+    month_report character varying(9) COLLATE pg_catalog."default" NOT NULL,
+    cid integer NOT NULL,
+    rid integer NOT NULL,
+    sid integer,
+    aid integer,
+    first_name character varying(45) COLLATE pg_catalog."default",
+    last_name character varying(45) COLLATE pg_catalog."default",
+    email character varying(50) COLLATE pg_catalog."default",
+    district character varying(20) COLLATE pg_catalog."default",
+    last_update date,
+    CONSTRAINT customer_rental_details_pkey PRIMARY KEY (month_report, cid, rid),
+    CONSTRAINT customer_rental_details_aid_fkey FOREIGN KEY (aid)
+        REFERENCES public.address (address_id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION,
+    CONSTRAINT customer_rental_details_cid_fkey FOREIGN KEY (cid)
+        REFERENCES public.customer (customer_id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION,
+    CONSTRAINT customer_rental_details_rid_fkey FOREIGN KEY (rid)
+        REFERENCES public.rental (rental_id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION,
+    CONSTRAINT customer_rental_details_sid_fkey FOREIGN KEY (sid)
+        REFERENCES public.store (store_id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION
+)
+
+TABLESPACE pg_default;
+
+ALTER TABLE IF EXISTS public.customer_rental_details
+    OWNER to postgres;
+
+-- Table: public.customer_rental_summary
+
+-- DROP TABLE IF EXISTS public.customer_rental_summary;
+
+CREATE TABLE IF NOT EXISTS public.customer_rental_summary
+(
+    month_report character varying(9) COLLATE pg_catalog."default" NOT NULL,
+    cid integer NOT NULL,
+    sid integer,
+    rental_count integer,
+    CONSTRAINT customer_rental_summary_pkey PRIMARY KEY (month_report, cid),
+    CONSTRAINT customer_rental_summary_cid_fkey FOREIGN KEY (cid)
+        REFERENCES public.customer (customer_id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION,
+    CONSTRAINT customer_rental_summary_fkey FOREIGN KEY (sid)
+        REFERENCES public.store (store_id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION
+)
+
+TABLESPACE pg_default;
+
+ALTER TABLE IF EXISTS public.customer_rental_summary
+    OWNER to postgres;
+
+INSERT INTO customer_rental_summary (month_report, cid, sid, rental_count)
+SELECT mm_name(r.rental_date), c.customer_id, s.store_id, COUNT(r.rental_id)
+	FROM customer c
+	LEFT JOIN rental r ON r.customer_id = c.customer_id
+	LEFT JOIN store s ON c.store_id = s.store_id
+	GROUP BY r.rental_date, c.customer_id, s.store_id
+	ORDER BY mm_name(rental_date), COUNT(rental_id);
+
+CREATE OR REPLACE FUNCTION mm_name(num_month timestamp without time zone)
+RETURNS varchar(9) AS $text_month$
+DECLARE text_month varchar(9);
+BEGIN
+     SELECT to_char(num_month, 'Month') INTO text_month;
+RETURN text_month;
+END; $text_month$
+LANGUAGE PLPGSQL;
+
+CREATE OR REPLACE FUNCTION mm_name(num_month timestamp without time zone)
+RETURNS varchar(9) AS $$
+DECLARE text_month varchar(9);
+BEGIN
+     SELECT to_char(num_month, 'Month') INTO text_month;
+RETURN text_month;
+END; $$
+LANGUAGE PLPGSQL;
+
+--RUN AS A QUERY
+CREATE OR REPLACE FUNCTION mm_name(num_month timestamp without time zone)
+RETURNS varchar(9) AS '
+DECLARE text_month varchar(9);
+BEGIN
+     SELECT to_char(num_month, ''Month'') INTO text_month;
+RETURN text_month;
+END; '
+LANGUAGE PLPGSQL;

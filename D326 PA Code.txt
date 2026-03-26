@@ -1,0 +1,95 @@
+--Transformative Function
+CREATE OR REPLACE FUNCTION quarterly(transaction_date timestamp without time zone)
+RETURNS integer AS $$
+BEGIN
+    IF EXTRACT(month FROM transaction_date) BETWEEN 1 AND 3 THEN
+		RETURN 1;
+	ELSEIF EXTRACT(month FROM transaction_date) BETWEEN 4 AND 6 THEN
+		RETURN 2;
+	ELSEIF EXTRACT(month FROM transaction_date) BETWEEN 7 AND 9 THEN
+		RETURN 3;
+	ELSE
+		RETURN 4;
+	END IF;
+END; $$
+LANGUAGE PLPGSQL;
+
+--Detailed and Summary Tables
+CREATE TABLE IF NOT EXISTS quarterly_customer_details (
+    quarter integer,
+    cid integer,
+    rid integer,
+    sid integer,
+    aid integer,
+    first_name varchar(45),
+    last_name varchar(45),
+    email varchar(50),
+    district varchar(20) ,
+    last_update date,
+    PRIMARY KEY (quarter, cid, rid),
+    FOREIGN KEY (aid)
+        REFERENCES address (address_id),
+    FOREIGN KEY (cid)
+        REFERENCES customer (customer_id),
+    FOREIGN KEY (rid)
+        REFERENCES rental (rental_id),
+   FOREIGN KEY (sid)
+        REFERENCES store (store_id)
+);
+
+CREATE TABLE IF NOT EXISTS total_district_summary (
+    ranking serial,
+    district varchar(20),
+    rental_count integer,
+    PRIMARY KEY (ranking)
+);
+
+--Data Extraction to Detailed Table
+INSERT INTO quarterly_customer_details (quarter, cid, rid, sid, aid, first_name, last_name, email, district)
+SELECT quarterly(r.rental_date), c.customer_id, r.rental_id, s.store_id, a.address_id, c.first_name, c.last_name, c.email, a.district
+	FROM customer c
+	LEFT JOIN rental r ON r.customer_id = c.customer_id
+	LEFT JOIN store s ON c.store_id = s.store_id
+	LEFT JOIN address a ON a.address_id = c.address_id
+	LEFT JOIN city ON a.district = city.city
+	LEFT JOIN country ON a.district = country.country
+	GROUP BY c.customer_id, r.rental_id, s.store_id, a.address_id;
+
+--Trigger and Trigger Function to update Summary Table as data is added to Detailed Table
+CREATE OR REPLACE FUNCTION district_update()
+RETURNS TRIGGER AS $$
+BEGIN
+	DELETE FROM total_district_summary;
+	INSERT INTO total_district_summary (district, rental_count)
+SELECT district, COUNT(rid)
+FROM quarterly_customer_details
+		GROUP BY district
+		ORDER BY COUNT(rid) DESC;
+RETURN NEW;
+END; $$
+LANGUAGE PLPGSQL;
+
+CREATE TRIGGER quarterly_update
+AFTER INSERT on quarterly_customer_details
+FOR EACH STATEMENT
+EXECUTE PROCEDURE district_update();
+
+--Procedure to refresh data in both Detailed and Summary tables
+CREATE OR REPLACE PROCEDURE refresh_quarterly_details() AS $$
+	BEGIN
+		DELETE FROM quarterly_customer_details;
+		PERFORM setval('total_district_summary_ranking_seq', 1, false) FROM total_district_summary;
+		INSERT INTO quarterly_customer_details (quarter, cid, rid, sid, aid, first_name, last_name, email, district)
+		SELECT quarterly(r.rental_date), c.customer_id, r.rental_id, s.store_id, a.address_id, c.first_name, c.last_name, c.email, a.district
+		FROM customer c
+		LEFT JOIN rental r ON r.customer_id = c.customer_id
+		LEFT JOIN store s ON c.store_id = s.store_id
+		LEFT JOIN address a ON a.address_id = c.address_id
+		LEFT JOIN city ON a.district = city.city
+		LEFT JOIN country ON a.district = country.country
+		GROUP BY c.customer_id, r.rental_id, s.store_id, a.address_id;
+	END; $$
+	LANGUAGE PLPGSQL;
+
+CALL refresh_quarterly_details();
+
